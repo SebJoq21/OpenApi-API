@@ -1,12 +1,52 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
   title: API Fogonería - Gestión de Órdenes
-  version: 1.0.0
-  description: API REST para la gestión del ciclo de vida de órdenes en restaurantes.
+  version: 1.1.0
+  description: |
+    API REST para la gestión del ciclo de vida de órdenes en restaurantes (SaaS multitenencia).
+
+    ## Reglas de negocio
+    - **Multitenencia:** `empresa_id` se obtiene SIEMPRE del JWT. Nunca se envía en el body ni como parámetro.
+      Todas las consultas y escrituras se filtran por la empresa del token.
+    - **Cálculos del servidor:** el cliente NO envía `igv`, `total`, `descuento_cupon`, `numero_orden` ni `alerta_sla`.
+      - `descuento_cupon` se calcula a partir de `cupon_id` (0.00 si no hay cupón).
+      - `igv = (subtotal - descuento_cupon) * 0.18` (IGV Perú).
+      - `total = (subtotal - descuento_cupon) + igv`.
+      - Montos redondeados a 2 decimales.
+    - **numero_orden:** formato `ORD-AAAA-NNN`, generado por el servidor, único por sucursal.
+    - **alerta_sla:** calculado por el servidor; es `true` si el tiempo de la orden supera el límite configurado.
+    - **Anulación:** se hace únicamente con `DELETE /ordenes/{id}` (anulación lógica, estado `ANULADO`).
+      No se puede anular una orden en estado `ENTREGADO` (409).
+
+    ## Flujo de estados
+    `PENDIENTE -> CONFIRMADO -> PREPARANDO -> LISTO -> ENTREGADO`
+
+    | Transición | Timestamp que se registra |
+    |---|---|
+    | PENDIENTE -> CONFIRMADO | `confirmacion_at` |
+    | PREPARANDO -> LISTO | `listo_at` |
+    | LISTO -> ENTREGADO | `entrega_at` |
+
+    No se permiten saltos ni retrocesos (409). `ANULADO` es un estado final alcanzado solo vía DELETE.
+
+    ## Nota de implementación (NestJS)
+    La ruta fija `/ordenes/alertas` debe declararse ANTES que `/ordenes/{id}` en el controller,
+    de lo contrario `alertas` se interpreta como un id.
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Desarrollo local
+security:
+  - bearerAuth: []
+tags:
+  - name: Órdenes
+    description: Creación, consulta y ciclo de vida de órdenes
 paths:
   /ordenes/salon:
     post:
+      tags: [Órdenes]
+      operationId: crearOrdenSalon
       summary: Crear orden de salón
+      description: Crea una orden con `origen = SALON`. Exige mesa y mesero. Estado inicial `PENDIENTE`.
       requestBody:
         required: true
         content:
@@ -16,9 +56,25 @@ paths:
       responses:
         '201':
           description: Orden creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /ordenes/delivery:
     post:
-      summary: Crear orden de delivery
+      tags: [Órdenes]
+      operationId: crearOrdenDelivery
+      summary: Crear orden de delivery o para llevar
+      description: |
+        Crea una orden con `origen = DELIVERY` o `LLEVAR`. `mesa_id` y `mesero_id` quedan en null.
+        - Si `origen = DELIVERY`, `cliente_id` es obligatorio (validación en el servidor).
+        - Si `origen = LLEVAR`, `cliente_id` es opcional (cliente de paso).
       requestBody:
         required: true
         content:
@@ -27,52 +83,97 @@ paths:
               $ref: '#/components/schemas/OrdenDeliveryInput'
       responses:
         '201':
-          description: Orden de delivery creada
-  /ordenes/{id}/estado:
-    patch:
-      summary: Modificar el estado de la orden
+          description: Orden creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /ordenes:
+    get:
+      tags: [Órdenes]
+      operationId: listarOrdenes
+      summary: Listar órdenes con filtros y paginación
+      description: Devuelve solo las órdenes de la empresa del token.
       parameters:
-        - in: path
-          name: id
-          required: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: estado
+          in: query
+          schema:
+            $ref: '#/components/schemas/EstadoOrden'
+        - name: origen
+          in: query
+          schema:
+            $ref: '#/components/schemas/OrigenOrden'
+        - name: sucursal_id
+          in: query
           schema:
             type: string
             format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                estado:
-                  type: string
-                  enum: [PENDIENTE, PREPARANDO, LISTO, ENTREGADO, ANULADO]
+        - name: mesa_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: desde
+          in: query
+          description: Fecha/hora mínima de `ingreso_at` (inclusive).
+          schema:
+            type: string
+            format: date-time
+        - name: hasta
+          in: query
+          description: Fecha/hora máxima de `ingreso_at` (inclusive).
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
-          description: Estado actualizado
-  /ordenes/{id}:
-    delete:
-      summary: Anular una orden
+          description: Lista paginada de órdenes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdenList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /ordenes/alertas:
+    get:
+      tags: [Órdenes]
+      operationId: listarOrdenesAlertaSla
+      summary: Listar órdenes con SLA excedido
+      description: Órdenes con `alerta_sla = true` de la empresa del token. Declarar antes que `/ordenes/{id}`.
       parameters:
-        - in: path
-          name: id
-          required: true
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: sucursal_id
+          in: query
           schema:
             type: string
             format: uuid
       responses:
-        '204':
-          description: Orden anulada
+        '200':
+          description: Lista paginada de órdenes con alerta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdenList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /ordenes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrdenId'
     get:
+      tags: [Órdenes]
+      operationId: obtenerOrden
       summary: Obtener detalle de una orden
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
       responses:
         '200':
           description: Detalle de la orden
@@ -80,65 +181,309 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Orden'
-  /ordenes:
-    get:
-      summary: Listar todas las órdenes
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Órdenes]
+      operationId: anularOrden
+      summary: Anular una orden (anulación lógica)
+      description: |
+        Cambia el estado a `ANULADO`; no borra el registro.
+        Devuelve 409 si la orden está `ENTREGADO` o ya `ANULADO`.
+      responses:
+        '204':
+          description: Orden anulada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /ordenes/{id}/estado:
+    patch:
+      tags: [Órdenes]
+      operationId: actualizarEstadoOrden
+      summary: Avanzar el estado de la orden
+      description: |
+        Solo permite la transición al siguiente estado del flujo
+        `PENDIENTE -> CONFIRMADO -> PREPARANDO -> LISTO -> ENTREGADO`.
+        Registra `confirmacion_at`, `listo_at` o `entrega_at` según la transición.
+        Para anular usar `DELETE /ordenes/{id}`.
+      parameters:
+        - $ref: '#/components/parameters/OrdenId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdenUpdateEstado'
       responses:
         '200':
-          description: Lista de órdenes
-  /ordenes/alertas:
-    get:
-      summary: Listar órdenes con SLA excedido
-      responses:
-        '200':
-          description: Órdenes con alerta_sla en true
+          description: Estado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: El JWT contiene `empresa_id`, que define la multitenencia.
+  parameters:
+    OrdenId:
+      name: id
+      in: path
+      required: true
+      description: Identificador de la orden.
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: Datos inválidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Token ausente o inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Orden no encontrada (o de otra empresa)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Transición de estado inválida o numero_orden duplicado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   schemas:
+    EstadoOrden:
+      type: string
+      enum: [PENDIENTE, CONFIRMADO, PREPARANDO, LISTO, ENTREGADO, ANULADO]
+    EstadoAvance:
+      type: string
+      description: Estados destino permitidos en el PATCH (sin ANULADO).
+      enum: [CONFIRMADO, PREPARANDO, LISTO, ENTREGADO]
+    OrigenOrden:
+      type: string
+      enum: [SALON, LLEVAR, DELIVERY]
+    Monto:
+      type: number
+      format: double
+      minimum: 0
+      multipleOf: 0.01
+      example: 85.50
     OrdenSalonInput:
       type: object
-      required: [empresa_id, sucursal_id, mesa_id, mesero_id, subtotal]
+      required: [sucursal_id, mesa_id, mesero_id, subtotal]
       properties:
-        empresa_id: { type: string, format: uuid }
-        sucursal_id: { type: string, format: uuid }
-        mesa_id: { type: string, format: uuid }
-        mesero_id: { type: string, format: uuid }
-        subtotal: { type: number, format: double }
-        descuento_cupon: { type: number, format: double, default: 0.00 }
-        igv: { type: number, format: double }
-        total: { type: number, format: double }
+        sucursal_id:
+          type: string
+          format: uuid
+        mesa_id:
+          type: string
+          format: uuid
+        mesero_id:
+          type: string
+          format: uuid
+        cliente_id:
+          type: string
+          format: uuid
+          nullable: true
+        subtotal:
+          $ref: '#/components/schemas/Monto'
+        cupon_id:
+          type: string
+          format: uuid
+          nullable: true
+        lista_precio_id:
+          type: string
+          format: uuid
+          nullable: true
     OrdenDeliveryInput:
       type: object
-      required: [empresa_id, sucursal_id, cliente_id, subtotal]
+      required: [sucursal_id, origen, subtotal]
       properties:
-        empresa_id: { type: string, format: uuid }
-        sucursal_id: { type: string, format: uuid }
-        cliente_id: { type: string, format: uuid }
-        subtotal: { type: number, format: double }
-        descuento_cupon: { type: number, format: double, default: 0.00 }
-        igv: { type: number, format: double }
-        total: { type: number, format: double }
+        sucursal_id:
+          type: string
+          format: uuid
+        origen:
+          type: string
+          enum: [LLEVAR, DELIVERY]
+        cliente_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Obligatorio si `origen = DELIVERY`; opcional si `LLEVAR`.
+        subtotal:
+          $ref: '#/components/schemas/Monto'
+        cupon_id:
+          type: string
+          format: uuid
+          nullable: true
+        lista_precio_id:
+          type: string
+          format: uuid
+          nullable: true
+    OrdenUpdateEstado:
+      type: object
+      required: [estado]
+      properties:
+        estado:
+          $ref: '#/components/schemas/EstadoAvance'
     Orden:
       type: object
       properties:
-        id: { type: string, format: uuid }
-        empresa_id: { type: string, format: uuid }
-        sucursal_id: { type: string, format: uuid }
-        numero_orden: { type: string }
-        mesa_id: { type: string, format: uuid, nullable: true }
-        cliente_id: { type: string, format: uuid, nullable: true }
-        mesero_id: { type: string, format: uuid, nullable: true }
-        origen: { type: string, enum: [SALON, LLEVAR, DELIVERY] }
-        estado: { type: string, enum: [PENDIENTE, PREPARANDO, LISTO, ENTREGADO, ANULADO] }
-        subtotal: { type: number, format: double }
-        descuento_cupon: { type: number, format: double }
-        igv: { type: number, format: double }
-        total: { type: number, format: double }
-        lista_precio_id: { type: string, format: uuid, nullable: true }
-        cupon_id: { type: string, format: uuid, nullable: true }
-        ingreso_at: { type: string, format: date-time }
-        confirmacion_at: { type: string, format: date-time, nullable: true }
-        listo_at: { type: string, format: date-time, nullable: true }
-        entrega_at: { type: string, format: date-time, nullable: true }
-        alerta_sla: { type: boolean }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        empresa_id:
+          type: string
+          format: uuid
+          readOnly: true
+        sucursal_id:
+          type: string
+          format: uuid
+        numero_orden:
+          type: string
+          readOnly: true
+          example: ORD-2026-001
+        mesa_id:
+          type: string
+          format: uuid
+          nullable: true
+        cliente_id:
+          type: string
+          format: uuid
+          nullable: true
+        mesero_id:
+          type: string
+          format: uuid
+          nullable: true
+        origen:
+          $ref: '#/components/schemas/OrigenOrden'
+        estado:
+          $ref: '#/components/schemas/EstadoOrden'
+        subtotal:
+          $ref: '#/components/schemas/Monto'
+        descuento_cupon:
+          allOf:
+            - $ref: '#/components/schemas/Monto'
+          readOnly: true
+          default: 0.00
+        igv:
+          allOf:
+            - $ref: '#/components/schemas/Monto'
+          readOnly: true
+        total:
+          allOf:
+            - $ref: '#/components/schemas/Monto'
+          readOnly: true
+        lista_precio_id:
+          type: string
+          format: uuid
+          nullable: true
+        cupon_id:
+          type: string
+          format: uuid
+          nullable: true
+        ingreso_at:
+          type: string
+          format: date-time
+          readOnly: true
+        confirmacion_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        listo_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        entrega_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        alerta_sla:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    OrdenList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Orden'
+        meta:
+          type: object
+          properties:
+            page:
+              type: integer
+              example: 1
+            limit:
+              type: integer
+              example: 20
+            total:
+              type: integer
+              example: 134
+            total_pages:
+              type: integer
+              example: 7
+    Error:
+      type: object
+      required: [statusCode, message]
+      properties:
+        statusCode:
+          type: integer
+          example: 409
+        error:
+          type: string
+          example: Conflict
+        message:
+          type: string
+          example: Transición de estado inválida de PENDIENTE a LISTO
