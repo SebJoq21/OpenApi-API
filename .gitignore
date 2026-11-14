@@ -1,0 +1,28 @@
+# ============================================================
+# Documento local de estudio (no se publica en el repositorio)
+# ============================================================
+opcion2-planificacion/EXPLICACION-PROCESO.md
+
+# Node / NestJS
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# Prisma / base de datos local
+prisma/dev.db
+*.db
+*.sqlite
+
+# Logs
+*.log
+logs/
+
+# IDE / sistema operativo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
