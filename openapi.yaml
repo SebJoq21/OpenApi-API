@@ -1,0 +1,144 @@
+openapi: 3.0.0
+info:
+  title: API Fogonería - Gestión de Órdenes
+  version: 1.0.0
+  description: API REST para la gestión del ciclo de vida de órdenes en restaurantes.
+paths:
+  /ordenes/salon:
+    post:
+      summary: Crear orden de salón
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdenSalonInput'
+      responses:
+        '201':
+          description: Orden creada
+  /ordenes/delivery:
+    post:
+      summary: Crear orden de delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdenDeliveryInput'
+      responses:
+        '201':
+          description: Orden de delivery creada
+  /ordenes/{id}/estado:
+    patch:
+      summary: Modificar el estado de la orden
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                estado:
+                  type: string
+                  enum: [PENDIENTE, PREPARANDO, LISTO, ENTREGADO, ANULADO]
+      responses:
+        '200':
+          description: Estado actualizado
+  /ordenes/{id}:
+    delete:
+      summary: Anular una orden
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Orden anulada
+    get:
+      summary: Obtener detalle de una orden
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Detalle de la orden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+  /ordenes:
+    get:
+      summary: Listar todas las órdenes
+      responses:
+        '200':
+          description: Lista de órdenes
+  /ordenes/alertas:
+    get:
+      summary: Listar órdenes con SLA excedido
+      responses:
+        '200':
+          description: Órdenes con alerta_sla en true
+components:
+  schemas:
+    OrdenSalonInput:
+      type: object
+      required: [empresa_id, sucursal_id, mesa_id, mesero_id, subtotal]
+      properties:
+        empresa_id: { type: string, format: uuid }
+        sucursal_id: { type: string, format: uuid }
+        mesa_id: { type: string, format: uuid }
+        mesero_id: { type: string, format: uuid }
+        subtotal: { type: number, format: double }
+        descuento_cupon: { type: number, format: double, default: 0.00 }
+        igv: { type: number, format: double }
+        total: { type: number, format: double }
+    OrdenDeliveryInput:
+      type: object
+      required: [empresa_id, sucursal_id, cliente_id, subtotal]
+      properties:
+        empresa_id: { type: string, format: uuid }
+        sucursal_id: { type: string, format: uuid }
+        cliente_id: { type: string, format: uuid }
+        subtotal: { type: number, format: double }
+        descuento_cupon: { type: number, format: double, default: 0.00 }
+        igv: { type: number, format: double }
+        total: { type: number, format: double }
+    Orden:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        empresa_id: { type: string, format: uuid }
+        sucursal_id: { type: string, format: uuid }
+        numero_orden: { type: string }
+        mesa_id: { type: string, format: uuid, nullable: true }
+        cliente_id: { type: string, format: uuid, nullable: true }
+        mesero_id: { type: string, format: uuid, nullable: true }
+        origen: { type: string, enum: [SALON, LLEVAR, DELIVERY] }
+        estado: { type: string, enum: [PENDIENTE, PREPARANDO, LISTO, ENTREGADO, ANULADO] }
+        subtotal: { type: number, format: double }
+        descuento_cupon: { type: number, format: double }
+        igv: { type: number, format: double }
+        total: { type: number, format: double }
+        lista_precio_id: { type: string, format: uuid, nullable: true }
+        cupon_id: { type: string, format: uuid, nullable: true }
+        ingreso_at: { type: string, format: date-time }
+        confirmacion_at: { type: string, format: date-time, nullable: true }
+        listo_at: { type: string, format: date-time, nullable: true }
+        entrega_at: { type: string, format: date-time, nullable: true }
+        alerta_sla: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
