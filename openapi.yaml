@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: API Fogonería - Gestión de Órdenes
-  version: 1.1.0
+  version: 1.2.0
   description: |
     API REST para la gestión del ciclo de vida de órdenes en restaurantes (SaaS multitenencia).
 
@@ -17,6 +17,8 @@ info:
     - **alerta_sla:** calculado por el servidor; es `true` si el tiempo de la orden supera el límite configurado.
     - **Anulación:** se hace únicamente con `DELETE /ordenes/{id}` (anulación lógica, estado `ANULADO`).
       No se puede anular una orden en estado `ENTREGADO` (409).
+
+    - **Errores:** todas las respuestas de error usan `application/problem+json` (RFC 7807): `type`, `title`, `status`, `detail`.
 
     ## Flujo de estados
     `PENDIENTE -> CONFIRMADO -> PREPARANDO -> LISTO -> ENTREGADO`
@@ -269,25 +271,25 @@ components:
     BadRequest:
       description: Datos inválidos
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Token ausente o inválido
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
     NotFound:
       description: Orden no encontrada (o de otra empresa)
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
     Conflict:
       description: Transición de estado inválida o numero_orden duplicado
       content:
-        application/json:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
@@ -476,14 +478,18 @@ components:
               example: 7
     Error:
       type: object
-      required: [statusCode, message]
+      description: Error en formato RFC 7807 (application/problem+json).
+      required: [type, title, status]
       properties:
-        statusCode:
-          type: integer
-          example: 409
-        error:
+        type:
+          type: string
+          example: about:blank
+        title:
           type: string
           example: Conflict
-        message:
+        status:
+          type: integer
+          example: 409
+        detail:
           type: string
           example: Transición de estado inválida de PENDIENTE a LISTO
