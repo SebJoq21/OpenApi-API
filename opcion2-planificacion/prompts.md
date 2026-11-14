@@ -233,7 +233,51 @@ Devuelve:
 | 2026-11-13 | `plan.md` | Prompt de plan técnico | Arquitectura NestJS/PostgreSQL/Prisma | Se añadió `Location` y `X-Request-Id` | La IA tiende a agregar campos no pedidos |
 | 2026-11-13 | `tasks.md` | Prompt de tareas | 69 tareas en 7 fases | Se agruparon tareas por endpoint | “Una tarea por vez” reduce el scope creep |
 | 2026-11-13 | Actualización del contrato | Pull a v1.2.0 | Cambió el error a RFC 7807 | Se actualizaron spec, plan, tasks y prompts | La IA debe releer el contrato, no confiar en la memoria |
-| 2026-11-13 | Revisión | Prompt de revisión | Pendiente | Pendiente | La revisión humana es el último filtro |
+| 2026-11-14 | Scaffold del API | Crear NestJS + Prisma + Docker/local | Proyecto base y migración inicial | Se usó PostgreSQL local en 5433 porque Docker no estaba corriendo | El entorno real manda; el plan debe adaptarse |
+| 2026-11-14 | Implementación de endpoints | Implementar las 7 operaciones según spec | API funcional con contratos y multitenencia | Se corrigieron tipos de Swagger, `HttpException.status` y la ruta del OpenAPI en Jest | Las pruebas detectan lo que la revisión visual no ve |
+| 2026-11-14 | Pruebas | Unitarias + e2e + contrato + smoke | 20 unitarias, 16 e2e, 10 contrato y 31 smoke en verde | Se alineó el seed con la secuencia de numeración | La evidencia debe ser ejecutable, no declarativa |
+| 2026-11-14 | Revisión | Revisar contrato, código y demo | `revision.md` con veredicto y deudas | Se documentaron desviaciones y pendientes | La IA propone; la persona firma |
+
+### 7.1 Prompts de implementación
+
+**Scaffold:**
+
+```text
+Implementa la Fase 0 de tasks.md en opcion2-planificacion/api.
+Stack: NestJS + TypeScript + PostgreSQL + Prisma.
+Incluye Docker Compose en 5433, .env.example, Prisma schema, migración y seed.
+No implementes endpoints todavía. Verifica build y conexión a base.
+```
+
+**Endpoints:**
+
+```text
+Implementa las 7 operaciones de openapi.yaml v1.2.0 siguiendo spec.md y plan.md.
+Respeta la constitución: tenant desde JWT, errores problem+json, dinero Decimal,
+numeración atómica, estados condicionales y SLA en lectura.
+No agregues endpoints ni campos. Ejecuta typecheck y pruebas.
+```
+
+**Pruebas:**
+
+```text
+Agrega pruebas unitarias del dominio, e2e de las 7 operaciones y pruebas de
+contrato con jest-openapi. Cubre 400, 401, 404, 409, 500, tenant y serialización.
+No cambies el contrato para hacer pasar las pruebas.
+```
+
+### 7.2 Resultado de implementación
+
+| Elemento | Resultado |
+|---|---|
+| Operaciones | 7/7 |
+| Unitarias | 20/20 |
+| E2E | 16/16 |
+| Contrato | 10/10 |
+| Smoke | 31/31 |
+| Build | OK |
+| Swagger | Operativo |
+| Revisión | `revision.md` con veredicto aprobado con observaciones |
 
 ---
 

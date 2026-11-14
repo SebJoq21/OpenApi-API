@@ -722,3 +722,22 @@ Reglas:
 8. Zona horaria por tenant.
 9. Roles/scopes futuros.
 10. Herramienta de documentación final: Swagger, Redoc o Postman.
+
+---
+
+## 19. Estado de implementación (post-ejecución)
+
+La implementación se completó en `api/` y se revisó en `revision.md`.
+
+| Aspecto | Plan | Implementación real |
+|---|---|---|
+| Stack | NestJS + PostgreSQL + Prisma | NestJS 11 + PostgreSQL 18 + Prisma 6 |
+| Base de datos | Docker Compose en 5433 | Instancia local aislada en 5433; Docker Compose incluido como alternativa |
+| Auth | `passport-jwt` | Guard propio con `@nestjs/jwt` |
+| Capas | Controller → Service → Repository | Controller → Service → Prisma (deuda registrada) |
+| Errores | `application/problem+json` | Filtro global implementado |
+| Swagger | YAML canónico | `swagger-ui-express` sobre `openapi.yaml` |
+| Pruebas | Unitarias, e2e y contrato | 20 unitarias, 16 e2e, 10 contrato, 31 smoke |
+| Demo | Swagger + Try it out | Operativa en `http://localhost:3000/api/docs` |
+
+Las desviaciones y pendientes están en `revision.md`.

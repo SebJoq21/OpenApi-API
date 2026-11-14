@@ -79,6 +79,20 @@ Entrega:
 | 5 | Hardening y entrega | T-055…T-062 | CI, seguridad y runbook |
 | 6 | Revisión y handoff | T-063…T-069 | Evidencia y revisión |
 
+### Estado de ejecución (2026-11-14)
+
+| Fase | Estado | Evidencia |
+|---|---|---|
+| 0 — Preparación | ✅ Completada | Proyecto NestJS, Docker Compose, entorno y contrato validado |
+| 1 — Datos y dominio | ✅ Completada | Prisma, migración, seed, dinero, cupón, numeración, estados, SLA y errores |
+| 2 — Auth y tenant | ✅ Completada | Guard JWT, tenant, 401 y aislamiento A/B |
+| 3 — Endpoints | ✅ Completada | 7/7 operaciones implementadas |
+| 4 — Contrato y pruebas | ⚠️ Parcial | 20 unitarias, 16 e2e, 10 contrato y 31 smoke; falta prueba de performance |
+| 5 — Hardening y entrega | ⚠️ Parcial | Swagger, README y build OK; CI, OWASP y rate limiting pendientes |
+| 6 — Revisión y handoff | ✅ Completada con observaciones | `revision.md` generado; pendiente firma humana y comparación |
+
+**Desviaciones registradas:** PostgreSQL local en `5433` en lugar de Docker (daemon no disponible), guard JWT propio en lugar de `passport-jwt`, y servicio accediendo a Prisma sin capa `repository` separada. El detalle está en `revision.md`.
+
 ---
 
 ## Fase 0 — Preparación y andamiaje

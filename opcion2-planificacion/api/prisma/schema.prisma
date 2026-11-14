@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EstadoOrden {
+  PENDIENTE
+  CONFIRMADO
+  PREPARANDO
+  LISTO
+  ENTREGADO
+  ANULADO
+}
+
+enum OrigenOrden {
+  SALON
+  LLEVAR
+  DELIVERY
+}
+
+enum TipoCupon {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+model Empresa {
+  id           String        @id @default(uuid()) @db.Uuid
+  nombre       String
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  sucursales   Sucursal[]
+  usuarios     Usuario[]
+  clientes     Cliente[]
+  cupones      Cupon[]
+  listasPrecio ListaPrecio[]
+  ordenes      Orden[]
+
+  @@map("empresas")
+}
+
+model Sucursal {
+  id         String           @id @default(uuid()) @db.Uuid
+  empresaId  String           @map("empresa_id") @db.Uuid
+  nombre     String
+  slaMinutos Int              @default(20) @map("sla_minutos")
+  timezone   String           @default("America/Lima")
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  empresa    Empresa          @relation(fields: [empresaId], references: [id])
+  mesas      Mesa[]
+  ordenes    Orden[]
+  secuencias OrdenSecuencia[]
+
+  @@index([empresaId])
+  @@map("sucursales")
+}
+
+model Mesa {
+  id         String   @id @default(uuid()) @db.Uuid
+  sucursalId String   @map("sucursal_id") @db.Uuid
+  codigo     String
+  sucursal   Sucursal @relation(fields: [sucursalId], references: [id])
+  ordenes    Orden[]
+
+  @@unique([sucursalId, codigo])
+  @@map("mesas")
+}
+
+model Usuario {
+  id        String   @id @default(uuid()) @db.Uuid
+  empresaId String   @map("empresa_id") @db.Uuid
+  nombre    String
+  activo    Boolean  @default(true)
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  ordenes   Orden[]  @relation("MeseroOrdenes")
+
+  @@index([empresaId])
+  @@map("usuarios")
+}
+
+model Cliente {
+  id        String   @id @default(uuid()) @db.Uuid
+  empresaId String   @map("empresa_id") @db.Uuid
+  nombre    String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  ordenes   Orden[]
+
+  @@index([empresaId])
+  @@map("clientes")
+}
+
+model Cupon {
+  id           String     @id @default(uuid()) @db.Uuid
+  empresaId    String     @map("empresa_id") @db.Uuid
+  codigo       String
+  tipo         TipoCupon
+  valor        Decimal    @db.Decimal(12, 2)
+  vigenteDesde DateTime   @map("vigente_desde") @db.Timestamptz(6)
+  vigenteHasta DateTime   @map("vigente_hasta") @db.Timestamptz(6)
+  activo       Boolean    @default(true)
+  empresa      Empresa    @relation(fields: [empresaId], references: [id])
+  ordenes      Orden[]
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId])
+  @@map("cupones")
+}
+
+model ListaPrecio {
+  id        String   @id @default(uuid()) @db.Uuid
+  empresaId String   @map("empresa_id") @db.Uuid
+  nombre    String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  ordenes   Orden[]
+
+  @@index([empresaId])
+  @@map("listas_precio")
+}
+
+model Orden {
+  id             String       @id @default(uuid()) @db.Uuid
+  empresaId      String       @map("empresa_id") @db.Uuid
+  sucursalId     String       @map("sucursal_id") @db.Uuid
+  numeroOrden    String       @map("numero_orden") @db.VarChar(20)
+  mesaId         String?      @map("mesa_id") @db.Uuid
+  clienteId      String?      @map("cliente_id") @db.Uuid
+  meseroId       String?      @map("mesero_id") @db.Uuid
+  origen         OrigenOrden
+  estado         EstadoOrden  @default(PENDIENTE)
+  subtotal       Decimal      @db.Decimal(12, 2)
+  descuentoCupon Decimal      @default(0) @map("descuento_cupon") @db.Decimal(12, 2)
+  igv            Decimal      @db.Decimal(12, 2)
+  total          Decimal      @db.Decimal(12, 2)
+  listaPrecioId  String?      @map("lista_precio_id") @db.Uuid
+  cuponId        String?      @map("cupon_id") @db.Uuid
+  ingresoAt      DateTime     @default(now()) @map("ingreso_at") @db.Timestamptz(6)
+  confirmacionAt DateTime?    @map("confirmacion_at") @db.Timestamptz(6)
+  listoAt        DateTime?    @map("listo_at") @db.Timestamptz(6)
+  entregaAt      DateTime?    @map("entrega_at") @db.Timestamptz(6)
+  slaMinutos     Int          @map("sla_minutos")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  empresa        Empresa      @relation(fields: [empresaId], references: [id])
+  sucursal       Sucursal     @relation(fields: [sucursalId], references: [id])
+  mesa           Mesa?        @relation(fields: [mesaId], references: [id])
+  cliente        Cliente?     @relation(fields: [clienteId], references: [id])
+  mesero         Usuario?     @relation("MeseroOrdenes", fields: [meseroId], references: [id])
+  cupon          Cupon?       @relation(fields: [cuponId], references: [id])
+  listaPrecio    ListaPrecio? @relation(fields: [listaPrecioId], references: [id])
+
+  @@unique([sucursalId, numeroOrden])
+  @@index([empresaId, ingresoAt])
+  @@index([empresaId, estado, ingresoAt])
+  @@index([empresaId, sucursalId, ingresoAt])
+  @@index([empresaId, mesaId, ingresoAt])
+  @@map("ordenes")
+}
+
+model OrdenSecuencia {
+  sucursalId String   @map("sucursal_id") @db.Uuid
+  anio       Int
+  ultimo     Int
+  sucursal   Sucursal @relation(fields: [sucursalId], references: [id])
+
+  @@id([sucursalId, anio])
+  @@map("orden_secuencias")
+}

@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16
+    container_name: fogoneria-ordenes-db
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: fogoneria
+      POSTGRES_PASSWORD: fogoneria
+      POSTGRES_DB: fogoneria
+    volumes:
+      - fogoneria_pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fogoneria -d fogoneria"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fogoneria_pgdata:
